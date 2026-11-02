@@ -1,0 +1,44 @@
+# Bots en continu : une tâche de ~5 h 40 qui tourne minute par minute ; le déclencheur (toutes les 30 min) met
+# toujours une tâche en attente, qui démarre dès que la précédente se termine. Une seule tourne à la fois.
+name: continu
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: continu
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  boucle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quentpapa-lang/strategie3
+          ssh-key: ${{ secrets.CLE_STRATEGIE3 }}
+          path: strategie3
+      - uses: actions/checkout@v4
+        with:
+          repository: quentpapa-lang/bot-agents
+          ssh-key: ${{ secrets.CLE_BOT_AGENTS }}
+          path: bot-agents
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -q -r strategie3/requirements.txt
+      - name: identité git
+        run: |
+          for d in strategie3 bot-agents; do
+            git -C $d config user.name "bots-continu"
+            git -C $d config user.email "bots-continu@users.noreply.github.com"
+          done
+      - name: boucle (minute par minute)
+        run: python continu.py
