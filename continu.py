@@ -62,6 +62,30 @@ def tour_s3() -> dict:
         return {"erreur": (r.stderr or "").strip().splitlines()[-1:] or ["?"]}
 
 
+def recopier_plan_zoe() -> bool:
+    """Plan de Zoé (bot-agents, etat.json → zoe.ordres) recopié dans strategie3/etat/plan_zoe.json, où le bot « zoe » de
+    Stratégie 3.0 l'exécute. Renvoie True si le plan a changé (l'état est alors poussé tout de suite)."""
+    try:
+        z = json.loads((BA / "etat" / "etat.json").read_text(encoding="utf-8")).get("zoe") or {}
+    except (OSError, ValueError):
+        return False
+    ordres = {s: {"sens": o.get("sens", 1), "entree": o["entree"], "stop": o["stop"], "objectif": o["objectif"],
+                  "levier": o.get("levier", 4), "pose": o.get("pose"), "expire": o.get("expire"),
+                  "unite": (o.get("zone") or {}).get("unite")} for s, o in (z.get("ordres") or {}).items()}
+    objectifs = {s: p["objectif"] for s, p in (z.get("positions") or {}).items()}
+    neuf = {"source": "bot-agents etat.json → zoe", "regle": z.get("regle"), "ordres": ordres, "objectifs": objectifs}
+    f = S3 / "etat" / "plan_zoe.json"
+    try:
+        ancien = json.loads(f.read_text(encoding="utf-8"))
+        ancien.pop("genere", None)
+    except (OSError, ValueError):
+        ancien = None
+    if ancien == neuf:
+        return False
+    f.write_text(json.dumps({**neuf, "genere": horodatage()}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return True
+
+
 def verrou_comite() -> bool:
     f = BA / "etat" / "verrou"
     if not f.exists():
@@ -79,13 +103,15 @@ def main() -> int:
     while time.time() < fin:
         t0 = time.time()
         n += 1
-        # ---- Stratégie 3.0
+        # ---- Stratégie 3.0 (le plan de Zoé est recopié d'abord, depuis le dernier état du comité)
         tirer(S3)
+        tirer(BA)
+        plan_neuf = recopier_plan_zoe()
         r = tour_s3()
-        bouge = r.get("consignes", 0) > 0 or (ordres_vus is not None and r.get("ordres") != ordres_vus)
+        bouge = plan_neuf or r.get("consignes", 0) > 0 or (ordres_vus is not None and r.get("ordres") != ordres_vus)
         ordres_vus = r.get("ordres", ordres_vus)
         if bouge or time.time() - pousse["s3"] > POUSSE_S3:
-            etat = pousser(S3, f"état : {horodatage()}", ["etat/state.sqlite"])
+            etat = pousser(S3, f"état : {horodatage()}", ["etat/state.sqlite", "etat/plan_zoe.json"])
             pousse["s3"] = time.time()
         else:
             etat = "local"
@@ -105,7 +131,7 @@ def main() -> int:
               flush=True)
         time.sleep(max(1.0, PAS - (time.time() - t0)))
     # fin de tâche : tout pousser avant de passer la main
-    pousser(S3, f"état : {horodatage()}", ["etat/state.sqlite"])
+    pousser(S3, f"état : {horodatage()}", ["etat/state.sqlite", "etat/plan_zoe.json"])
     if not verrou_comite():
         pousser(BA, f"suivi : {horodatage()}", ["etat"])
     print("fin de la tâche, la suivante prend le relais", flush=True)
