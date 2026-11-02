@@ -13,12 +13,19 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write          # pour mettre la tâche suivante en attente (relais)
 
 jobs:
   boucle:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
+      # Relais : la tâche suivante est mise en attente dès maintenant ; elle démarre quand celle-ci se termine (groupe de
+      # concurrence). Le déclencheur toutes les 30 min de GitHub n'est qu'un filet : il ne s'est pas déclenché le 02/11.
+      - name: relais (tâche suivante en attente)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run continu.yml -R ${{ github.repository }} --ref main || echo "relais refusé"
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
