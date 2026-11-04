@@ -32,11 +32,32 @@ def git(depot: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(depot), *args], capture_output=True, text=True, timeout=120)
 
 
+def etat_sain(depot: Path) -> bool:
+    """Aucun marqueur de conflit dans etat/ et tous les .json lisibles. Le 2026-11-04, un --autostash en conflit a
+    laissé « <<<<<<< Updated upstream » dans bot-agents/etat/etat.json, puis la boucle l'a commité : suivi mort 3 h."""
+    for f in (depot / "etat").glob("*.json"):
+        try:
+            json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+    return True
+
+
 def tirer(depot: Path) -> bool:
-    return git(depot, "pull", "-q", "--rebase", "--autostash").returncode == 0
+    ok = git(depot, "pull", "-q", "--rebase", "--autostash").returncode == 0
+    if not ok or not etat_sain(depot):
+        # conflit : on garde la version distante (une minute de suivi perdue, recalculée au tour suivant)
+        git(depot, "rebase", "--abort")
+        git(depot, "checkout", "-q", "HEAD", "--", "etat")
+        git(depot, "stash", "drop")
+        ok = etat_sain(depot)
+    return ok
 
 
 def pousser(depot: Path, message: str, chemins: list[str]) -> str:
+    if not etat_sain(depot):
+        git(depot, "checkout", "-q", "HEAD", "--", "etat")
+        return "REFUSÉ (état illisible, restauré)"
     git(depot, "add", *chemins)
     if git(depot, "diff", "--cached", "--quiet").returncode == 0:
         return "rien"
