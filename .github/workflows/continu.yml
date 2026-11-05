@@ -48,4 +48,12 @@ jobs:
             git -C $d config user.email "bots-continu@users.noreply.github.com"
           done
       - name: boucle (minute par minute)
+        env:
+          # Agents 24/24 : sans GEMINI_API_KEY dans ce dépôt, la veille ne se lance pas (le secours de bot-agents prend le relais).
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SECOURS_API_KEY: ${{ secrets.SECOURS_API_KEY }}
+          SECOURS_BASE_URL: ${{ secrets.SECOURS_BASE_URL }}
+          SECOURS_MODELE: ${{ secrets.SECOURS_MODELE }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python continu.py

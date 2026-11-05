@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import urllib.request
 import sys
 import time
 from pathlib import Path
@@ -117,6 +118,60 @@ def verrou_comite() -> bool:
         return True
 
 
+# ---- agents 24/24 (demande de Quentin, 2026-11-05) : un cycle de veille toutes les 5 min, lancé en arrière-plan pour ne
+# jamais bloquer le suivi à la minute ; le cycle décide lui-même s'il appelle l'IA (délais 15 / 20 / 30 min selon le
+# régime). Un mouvement brutal du prix (≥ 1,5 % en 10 min) lance un cycle FORCÉ sans attendre. Sans clé GEMINI_API_KEY
+# dans ce dépôt, rien ne se lance et le workflow de secours de bot-agents (toutes les 2 h) reste la veille.
+VEILLE_PAS, CHOC_RAPIDE, CHOC_FENETRE, FORCE_ESPACE = 300, 0.015, 600, 180
+veille = {"proc": None, "t": 0.0, "force_t": 0.0, "prix": []}
+
+
+def prix_btc() -> float | None:
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+                "https://open-api.bingx.com/openApi/swap/v2/quote/price?symbol=BTC-USDT",
+                headers={"User-Agent": "Mozilla/5.0"}), timeout=15) as r:
+            d = json.loads(r.read())["data"]
+        return float((d[0] if isinstance(d, list) else d)["price"])
+    except Exception:
+        return None
+
+
+def veille_en_cours() -> bool:
+    return veille["proc"] is not None and veille["proc"].poll() is None
+
+
+def veille_tour() -> str:
+    """Termine le cycle fini (journalise sa 1re ligne seulement : le détail reste dans le dépôt privé), en lance un autre si dû."""
+    p = veille["proc"]
+    if p is not None and p.poll() is not None:
+        sortie = (p.stdout.read() if p.stdout else "").strip().splitlines()
+        veille["proc"] = None
+        pousse_apres = True
+        info = (sortie[0][:120] if sortie else "sans sortie") + ("" if p.returncode == 0 else f" · code {p.returncode}")
+    else:
+        pousse_apres, info = False, ""
+    if not os.environ.get("GEMINI_API_KEY"):
+        return "veille inactive (pas de clé)"
+    if veille_en_cours():
+        return "veille en cours"
+    if verrou_comite():
+        return "veille en pause (comité)"
+    maint, b = time.time(), prix_btc()
+    if b:
+        veille["prix"] = [(t0, v) for t0, v in veille["prix"] if maint - t0 <= CHOC_FENETRE] + [(maint, b)]
+    ref = veille["prix"][0][1] if veille["prix"] else None
+    choc = bool(b and ref and abs(b / ref - 1) >= CHOC_RAPIDE and maint - veille["force_t"] >= FORCE_ESPACE)
+    if choc or maint - veille["t"] >= VEILLE_PAS:
+        veille["t"] = maint
+        if choc:
+            veille["force_t"] = maint
+        cmd = [sys.executable, "-m", "agents.comite", "--veille"] + (["--forcer"] if choc else [])
+        veille["proc"] = subprocess.Popen(cmd, cwd=BA, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        return ("veille FORCÉE (mouvement brutal) lancée" if choc else "veille lancée") + (f" · précédente : {info}" if info else "")
+    return f"veille ok ({info})" if pousse_apres else "veille en attente"
+
+
 def main() -> int:
     fin = time.time() + DUREE
     pousse = {"s3": time.time(), "ba": time.time()}
@@ -126,7 +181,8 @@ def main() -> int:
         n += 1
         # ---- Stratégie 3.0 (le plan de Zoé est recopié d'abord, depuis le dernier état du comité)
         tirer(S3)
-        tirer(BA)
+        if not veille_en_cours():          # ne pas tirer pendant qu'un cycle écrit dans etat/
+            tirer(BA)
         plan_neuf = recopier_plan_zoe()
         r = tour_s3()
         bouge = plan_neuf or r.get("consignes", 0) > 0 or (ordres_vus is not None and r.get("ordres") != ordres_vus)
@@ -137,7 +193,8 @@ def main() -> int:
         else:
             etat = "local"
         # ---- comité : suivi en direct, sauf pendant le comité quotidien
-        tirer(BA)
+        if not veille_en_cours():
+            tirer(BA)
         if verrou_comite():
             ba = "pause (comité en cours) · " + pousser(BA, f"suivi : {horodatage()}", ["etat"])
             pousse["ba"] = time.time()
@@ -148,10 +205,18 @@ def main() -> int:
             if time.time() - pousse["ba"] > POUSSE_BA:
                 ba += " · " + pousser(BA, f"suivi : {horodatage()}", ["etat"])
                 pousse["ba"] = time.time()
-        print(f"{horodatage()} · tour {n} · S3 {'erreur' if 'erreur' in r else 'ok'} ({etat}) · comité {ba}",
+        vt = veille_tour()
+        if vt.startswith("veille ok"):
+            pousse["ba"] = 0               # un cycle vient de finir : on pousse ses consignes au prochain tour
+        print(f"{horodatage()} · tour {n} · S3 {'erreur' if 'erreur' in r else 'ok'} ({etat}) · comité {ba} · {vt}",
               flush=True)
         time.sleep(max(1.0, PAS - (time.time() - t0)))
-    # fin de tâche : tout pousser avant de passer la main
+    # fin de tâche : laisser finir le cycle de veille en cours, puis tout pousser avant de passer la main
+    if veille_en_cours():
+        try:
+            veille["proc"].wait(timeout=240)
+        except Exception:
+            veille["proc"].kill()
     pousser(S3, f"état : {horodatage()}", ["etat/state.sqlite", "etat/plan_zoe.json"])
     if not verrou_comite():
         pousser(BA, f"suivi : {horodatage()}", ["etat"])
