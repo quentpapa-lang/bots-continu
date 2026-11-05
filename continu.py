@@ -202,8 +202,11 @@ def main() -> int:
             s = subprocess.run([sys.executable, "-m", "agents.comite", "--suivi"], cwd=BA, capture_output=True,
                                text=True, timeout=240)
             ba = "suivi ok" if s.returncode == 0 else "suivi en échec"
-            if time.time() - pousse["ba"] > POUSSE_BA:
-                ba += " · " + pousser(BA, f"suivi : {horodatage()}", ["etat"])
+            # Consigne de la veille appliquée : poussée TOUT DE SUITE, avec « CONSIGNE » dans le message. Le workflow
+            # notifier.yml de bot-agents (qui a les secrets Telegram, absents d'ici) prévient alors Quentin.
+            consigne = "consigne de la veille appliquée" in (s.stdout or "")
+            if consigne or time.time() - pousse["ba"] > POUSSE_BA:
+                ba += " · " + pousser(BA, f"suivi : {horodatage()}" + (" · CONSIGNE" if consigne else ""), ["etat"])
                 pousse["ba"] = time.time()
         vt = veille_tour()
         if vt.startswith("veille ok"):
