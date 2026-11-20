@@ -1,0 +1,19 @@
+# Occulte le lourd et le passé : départ propre (appliqué par le hook garde, ~/.claude/outils/zero-gaspillage/zg.py).
+# bots-continu : seulement les résidus.
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+.vercel/
+.turbo/
+.venv/
+__pycache__/
+.pytest_cache/
+*.log
+.env
+.env.local
+.env.production
+.env.development
+*.key
