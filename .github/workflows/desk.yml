@@ -27,10 +27,6 @@ jobs:
           repository: quentpapa-lang/desk-agents
           ssh-key: ${{ secrets.CLE_DESK_AGENTS }}
           path: desk-agents
-      - name: relais (tâche suivante en attente, seulement si le dépôt du desk s'ouvre)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run desk.yml -R ${{ github.repository }} --ref main || echo "relais refusé"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -41,6 +37,10 @@ jobs:
       - name: tests du compte papier
         working-directory: desk-agents
         run: python -m unittest discover -s tests
+      - name: relais (tâche suivante en attente, seulement si le dépôt s'ouvre et que les tests passent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run desk.yml -R ${{ github.repository }} --ref main || echo "relais refusé"
       - name: boucle (un passage par minute)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
