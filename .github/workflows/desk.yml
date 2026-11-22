@@ -1,0 +1,52 @@
+# Desk d'agents IA (papier, 500 $) : une tâche de ~5 h 40 qui fait un passage par minute ; le déclencheur toutes les
+# 30 min garde toujours une tâche en attente, qui démarre dès que la précédente se termine. Une seule tourne à la fois.
+# Séparé de continu.yml : groupe de concurrence propre, aucune interaction avec Stratégie 3.0 ni le comité.
+name: desk
+
+on:
+  schedule:
+    - cron: "15,45 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: desk
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write          # pour mettre la tâche suivante en attente (relais)
+
+jobs:
+  boucle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: relais (tâche suivante en attente)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run desk.yml -R ${{ github.repository }} --ref main || echo "relais refusé"
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: quentpapa-lang/desk-agents
+          ssh-key: ${{ secrets.CLE_DESK_AGENTS }}
+          path: desk-agents
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: identité git
+        run: |
+          git -C desk-agents config user.name "bots-continu"
+          git -C desk-agents config user.email "bots-continu@users.noreply.github.com"
+      - name: tests du compte papier
+        working-directory: desk-agents
+        run: python -m unittest discover -s tests
+      - name: boucle (un passage par minute)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SECOURS_API_KEY: ${{ secrets.SECOURS_API_KEY }}
+          SECOURS_BASE_URL: ${{ secrets.SECOURS_BASE_URL }}
+          SECOURS_MODELE: ${{ secrets.SECOURS_MODELE }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python desk_continu.py

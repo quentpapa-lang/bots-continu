@@ -4,6 +4,7 @@ Racine « Bots h24 » n° 3. Règles universelles : `~/.claude/CLAUDE.md`. Ce d�
 
 ## Où ça tourne
 - **GitHub Actions** : `.github/workflows/continu.yml`, déclencheur toutes les 30 min, une seule tâche à la fois. Chaque tâche dure environ 5 h 40 et passe le relais à la suivante.
+- **Desk d'agents IA** (depuis le 2026-11-22) : workflow séparé `desk.yml` + `desk_continu.py`, groupe de concurrence `desk`, clé `CLE_DESK_AGENTS` (posée par `installer-cle-desk.sh`). Indépendant de `continu.yml` : l'un peut tomber sans l'autre.
 - `continu.py` : la boucle. `tour_s3.py` : un passage de Stratégie 3.0. `installer-cles.sh` : pose des clés de déploiement.
 - **Papier uniquement** : les machines GitHub sont aux États-Unis, où BingX est interdit.
 
