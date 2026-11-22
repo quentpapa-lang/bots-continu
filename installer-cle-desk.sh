@@ -9,6 +9,7 @@ trap 'rm -rf "$K"' EXIT
 ssh-keygen -q -t ed25519 -N "" -C "bots-continu desk-agents" -f "$K/desk"
 gh repo deploy-key add "$K/desk.pub" --allow-write -t "bots-continu (ecriture)" -R quentpapa-lang/desk-agents
 gh secret set CLE_DESK_AGENTS -R quentpapa-lang/bots-continu < "$K/desk"
+gh workflow enable desk.yml -R quentpapa-lang/bots-continu
 gh workflow run desk.yml -R quentpapa-lang/bots-continu
 echo
 echo "OK — cle posee, desk lance. Suivi : https://github.com/quentpapa-lang/bots-continu/actions/workflows/desk.yml"
