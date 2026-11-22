@@ -1,5 +1,8 @@
 """Boucle continue du desk d'agents (papier) — un passage par minute pendant ~5 h 40, puis la tâche suivante.
 
+Chaque passage part au début de la minute (+2 s, le temps que la bougie 1 min se ferme côté API) : les stops et les
+relevés suivent la clôture au plus près. Un passage qui déborde la minute est suivi tout de suite : jamais de pause.
+
 Séparée de continu.py (workflow desk.yml, groupe de concurrence « desk ») : une panne du desk ne touche pas
 Stratégie 3.0 ni le comité, et l'inverse. Le code et l'état du desk sont dans le dépôt privé desk-agents, ouvert avec
 sa clé de déploiement (CLE_DESK_AGENTS). Le journal public n'affiche que des compteurs.
@@ -19,7 +22,7 @@ from pathlib import Path
 ICI = Path(__file__).resolve().parent
 DESK = ICI / "desk-agents"
 DUREE = float(os.environ.get("DUREE_S", 5 * 3600 + 40 * 60))
-PAS, POUSSE = 60, 600
+PAS, POUSSE, CALE = 60, 600, 2
 
 
 def git(*args: str) -> subprocess.CompletedProcess:
@@ -87,7 +90,7 @@ def main() -> int:
         print(f"{time.strftime('%H:%M', time.gmtime())} UTC · desk tour {n} · "
               f"{'erreur' if r.get('erreur') else 'ok'} · {r.get('evenements', 0)} événement(s) · "
               f"{r.get('duree_s', '?')} s · état {pousse}", flush=True)
-        time.sleep(max(1, PAS - (time.time() - debut)))
+        time.sleep(max(0, (debut // PAS + 1) * PAS + CALE - time.time()))
     print(f"fin de la tâche desk, état {pousser()}, la suivante prend le relais", flush=True)
     return 0
 

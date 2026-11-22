@@ -40,7 +40,11 @@ jobs:
       - name: relais (tâche suivante en attente, seulement si le dépôt s'ouvre et que les tests passent)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run desk.yml -R ${{ github.repository }} --ref main || echo "relais refusé"
+        # « enable » à chaque tâche : GitHub coupe les workflows planifiés d'un dépôt public après 60 jours sans
+        # commit ; réactiver remet ce compteur à zéro, sans commit factice.
+        run: |
+          gh workflow enable desk.yml -R ${{ github.repository }} || echo "réactivation refusée"
+          gh workflow run desk.yml -R ${{ github.repository }} --ref main || echo "relais refusé"
       - name: boucle (un passage par minute)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
